@@ -10,7 +10,7 @@ import json
 
 from ai_services.openai import process_voice_pipeline
 
-load_dotenv()
+load_dotenv().lu7uj
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Nephele Backend")
