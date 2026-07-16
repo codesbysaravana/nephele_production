@@ -1,0 +1,110 @@
+/* Obsidian Dark Theme with Light Blue Accents */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: 'Inter', sans-serif;
+    background-color: #0d0d0d;
+    /* Deep Obsidian Black */
+    color: #e0e0e0;
+    /* Soft white for readability */
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    overflow: hidden;
+}
+
+h1 {
+    font-weight: 800;
+    font-size: 2.5rem;
+    margin-bottom: 2rem;
+    letter-spacing: -1px;
+    background: linear-gradient(90deg, #4cc9f0, #4361ee);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    text-shadow: 0px 4px 20px rgba(76, 201, 240, 0.2);
+}
+
+#container {
+    display: flex;
+    gap: 1.5rem;
+    background-color: #1a1a1a;
+    /* Slightly lighter surface */
+    padding: 2.5rem;
+    border-radius: 16px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05);
+    transition: transform 0.3s ease;
+}
+
+#container:hover {
+    transform: translateY(-2px);
+}
+
+button {
+    font-family: 'Inter', sans-serif;
+    font-weight: 600;
+    font-size: 1.1rem;
+    padding: 12px 28px;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+#startBtn {
+    background-color: #4361ee;
+    color: white;
+    box-shadow: 0 4px 15px rgba(67, 97, 238, 0.4);
+}
+
+#startBtn:hover:not(:disabled) {
+    background-color: #3a56d4;
+    box-shadow: 0 6px 20px rgba(67, 97, 238, 0.6);
+    transform: translateY(-1px);
+}
+
+#stopBtn {
+    background-color: #2b2b2b;
+    color: #fca311;
+    /* subtle warning accent for stop */
+    border: 1px solid #3d3d3d;
+}
+
+#stopBtn:hover:not(:disabled) {
+    background-color: #363636;
+    color: #ffb703;
+}
+
+button:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    box-shadow: none;
+    transform: none;
+}
+
+#status {
+    margin-top: 2.5rem;
+    font-size: 1rem;
+    font-weight: 600;
+    color: #888;
+    padding: 8px 16px;
+    background-color: #141414;
+    border-radius: 20px;
+    border: 1px solid #222;
+    transition: all 0.3s ease;
+}
+
+/* Add a glowing effect when processing */
+#status.processing {
+    color: #4cc9f0;
+    border-color: #4cc9f0;
+    box-shadow: 0 0 15px rgba(76, 201, 240, 0.3);
+}
