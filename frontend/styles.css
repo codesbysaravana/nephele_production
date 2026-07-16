@@ -108,3 +108,14 @@ button:disabled {
     border-color: #4cc9f0;
     box-shadow: 0 0 15px rgba(76, 201, 240, 0.3);
 }
+
+/* Nephele Speaking Pulse Overlay */
+@keyframes speakingPulse {
+    0% { background: rgba(0, 0, 0, 0.4); box-shadow: inset 0 0 0px rgba(76, 201, 240, 0); }
+    50% { background: rgba(0, 0, 0, 0.2); box-shadow: inset 0 0 100px rgba(76, 201, 240, 0.3); }
+    100% { background: rgba(0, 0, 0, 0.4); box-shadow: inset 0 0 0px rgba(76, 201, 240, 0); }
+}
+
+.nephele-speaking {
+    animation: speakingPulse 1.5s infinite ease-in-out !important;
+}

@@ -30,10 +30,14 @@ function setupVoicePage() {
     function playNextAudio() {
         if (audioQueue.length === 0) {
             isPlaying = false;
+            const overlay = document.getElementById("speakingOverlay");
+            if (overlay) overlay.classList.remove("nephele-speaking");
             return;
         }
 
         isPlaying = true;
+        const overlay = document.getElementById("speakingOverlay");
+        if (overlay) overlay.classList.add("nephele-speaking");
         const audioBlob = audioQueue.shift();
         const audioUrl = URL.createObjectURL(audioBlob);
         const audio = new Audio(audioUrl);
