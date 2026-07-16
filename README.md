@@ -116,4 +116,3 @@ Then, simply open `frontend/index.html` in your web browser. Click the **Connect
 1. **The WebM Header Race Condition:** The frontend waits (`await`) for the WebSocket connection to fully open before triggering the `MediaRecorder`. This ensures the critical first audio chunk (which contains the WebM encoding header) makes it to Deepgram so it can decode the stream.
 2. **The Sentence Buffer:** LLMs output text word-by-word. Because TTS engines need full sentences to generate natural inflection, FastAPI buffers the incoming words until it detects punctuation (`.`, `!`, `?`), at which point it instantly dispatches the chunk to OpenAI TTS.
 3. **The Javascript Audio Queue:** Because the backend pipeline is heavily optimized, audio chunks arrive at the frontend very fast. Javascript queues the `Blob` files and relies on the `audio.onended` event to stitch them together without overlapping.
-# nephele_production
