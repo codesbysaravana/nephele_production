@@ -111,9 +111,9 @@ button:disabled {
 
 /* Nephele Speaking Pulse Overlay */
 @keyframes speakingPulse {
-    0% { background: rgba(0, 0, 0, 0.4); box-shadow: inset 0 0 0px rgba(76, 201, 240, 0); }
-    50% { background: rgba(0, 0, 0, 0.2); box-shadow: inset 0 0 100px rgba(76, 201, 240, 0.3); }
-    100% { background: rgba(0, 0, 0, 0.4); box-shadow: inset 0 0 0px rgba(76, 201, 240, 0); }
+    0% { background: rgba(0, 0, 0, 0.2); box-shadow: inset 0 0 0px rgba(76, 201, 240, 0); }
+    50% { background: rgba(0, 0, 0, 0.05); box-shadow: inset 0 0 100px rgba(76, 201, 240, 0.3); }
+    100% { background: rgba(0, 0, 0, 0.2); box-shadow: inset 0 0 0px rgba(76, 201, 240, 0); }
 }
 
 .nephele-speaking {
