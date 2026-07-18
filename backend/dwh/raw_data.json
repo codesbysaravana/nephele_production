@@ -1,0 +1,67 @@
+[
+    {
+        "customer": {
+            "id": "CUST-001",
+            "name": "Alice Wonderland",
+            "email": "alice@example.com"
+        },
+        "transaction": {
+            "id": "TXN-1001",
+            "amount": 250.50,
+            "date": "2023-10-01",
+            "items": ["Magic Potion", "Pocket Watch"]
+        }
+    },
+    {
+        "customer": {
+            "id": "CUST-002",
+            "name": "Bob Builder",
+            "email": "bob@example.com"
+        },
+        "transaction": {
+            "id": "TXN-1002",
+            "amount": 45.00,
+            "date": "2023-10-02",
+            "items": ["Hammer", "Nails"]
+        }
+    },
+    {
+        "customer": {
+            "id": "CUST-001",
+            "name": "Alice Wonderland",
+            "email": "alice@example.com"
+        },
+        "transaction": {
+            "id": "TXN-1003",
+            "amount": 150.00,
+            "date": "2023-10-05",
+            "items": ["Tea Cup"]
+        }
+    },
+    {
+        "customer": {
+            "id": "CUST-003",
+            "name": "Charlie Brown",
+            "email": "charlie@example.com"
+        },
+        "transaction": {
+            "id": "TXN-1004",
+            "amount": 12.99,
+            "date": "2023-10-06",
+            "items": ["Kite String"]
+        }
+    },
+    {
+        "customer": {
+            "id": "CUST-002",
+            "name": "Bob Builder",
+            "email": "bob@example.com"
+        },
+        "transaction": {
+            "id": "TXN-1005",
+            "amount": 300.25,
+            "date": "2023-10-10",
+            "items": ["Power Drill"]
+        }
+    }
+]

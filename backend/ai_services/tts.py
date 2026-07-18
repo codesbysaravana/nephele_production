@@ -13,7 +13,7 @@ async def generate_speech(text: str) -> bytes:
     try:
         response = await client.audio.speech.create(
             model="tts-1",
-            voice="alloy", 
+            voice="shimmer",
             input=text,
             response_format="opus"
         )

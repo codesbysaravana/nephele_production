@@ -61,6 +61,25 @@ function setupVoicePage() {
             };
 
             ws.onmessage = (event) => {
+                // 1. Handle JSON Agent Commands
+                if (typeof event.data === "string") {
+                    try {
+                        const payload = JSON.parse(event.data);
+                        if (payload.command === "route" && payload.path) {
+                            console.log("📡 Agent triggered UI route:", payload.path);
+                            // Clean up voice session before leaving
+                            if (mediaRecorder) mediaRecorder.stop();
+                            if (ws) ws.close();
+                            // Execute the route!
+                            window.location.hash = payload.path;
+                        }
+                    } catch (e) {
+                        console.error("Error parsing JSON command:", e);
+                    }
+                    return;
+                }
+
+                // 2. Handle Binary Audio
                 console.log("🔊 Received audio sentence from server!");
                 const audioBlob = new Blob([event.data], { type: 'audio/ogg; codecs=opus' });
                 audioQueue.push(audioBlob);

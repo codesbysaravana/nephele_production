@@ -3,3 +3,5 @@ uvicorn
 websockets
 dotenv
 openai
+psycopg
+psycopg[binary] #for postgres
