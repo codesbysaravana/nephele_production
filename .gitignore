@@ -1,35 +1,51 @@
-# Environments
+# Environment & Secrets
 .env
-.venv
-env/
+.env.*
+.venv/
 venv/
+env/
 ENV/
-env.bak/
-venv.bak/
 
-# Byte-compiled / optimized / DLL files
+# Python bytecode
 __pycache__/
 *.py[cod]
 *$py.class
 
-# OS generated files
+# OS files
 .DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
 Thumbs.db
+ehthumbs.db
 
-# IDEs and Editors
+# IDE
 .vscode/
 .idea/
 *.swp
 *.swo
 
-# Project specific
-Learning_Notes.md
-error_log.md
-WEB_SOCKET.md
+# Database files (contain user data, regenerated locally)
+*.db
+
+# ML artifacts (regenerated via `python -m ml.train`)
+backend/ml/artifacts/
+
+# Large video files (stored in frontend/assets/, not in /videos/)
+videos/
+
+# Test scratch files
+test.py
+
+# Node modules (if any)
+node_modules/
+
+# Logs
+*.log
+
+# Internal notes & planning docs (not for GitHub)
+AUDIT_REPORT.md
+CLAUDE.md
+CLAUDE_CLI_KEYS.md
 Pinging.md
 VOICE_REASON.md
+error_log.md
+implementation_plan.md
+toUse.md

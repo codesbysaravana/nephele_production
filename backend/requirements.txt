@@ -5,3 +5,6 @@ dotenv
 openai
 psycopg
 psycopg[binary] #for postgres
+numpy
+xgboost
+scikit-learn

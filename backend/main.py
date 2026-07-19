@@ -9,11 +9,16 @@ import websockets
 import json
 
 from ai_services.openai import process_voice_pipeline
+from ai_services.dashboard_brain import process_dashboard_voice
+from attendance_db import AttendanceDB
+from ml.router import router as ml_router
+from analytics_router import router as analytics_router
 
 load_dotenv()
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Nephele Backend")
+db = AttendanceDB()
 
 app.add_middleware(
     CORSMiddleware,
@@ -23,96 +28,132 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(ml_router)
+app.include_router(analytics_router)
+
+DEEPGRAM_URL = "wss://api.deepgram.com/v1/listen?model=nova-2&smart_format=true&endpointing=300"
+API_KEY = os.getenv("DEEPGRAM_API_KEY")
+
+
+# ============================================================
+# REST Endpoints
+# ============================================================
+
 @app.get("/")
 async def welcome():
     return {"status": "Nephele Backend Welcome"}
+
 
 @app.get("/health")
 async def health_check():
     return {"status": "Nephele is awake and listening!"}
 
+
+@app.get("/api/attendance")
+async def get_all_attendance():
+    records = db.get_all_scans()
+    return {"status": "success", "data": records}
+
+
 @app.post("/api/attendance")
 async def take_attendance(request: Request):
     data = await request.json()
-    logger.info(f"✅ Attendance Logged: {data}")
-    return {"status": "success", "message": "Attendance saved!"}
+    student_id = data.get("student_id", "UNKNOWN")
+    db.log_scan(student_id=student_id, raw_payload=data)
+    logger.info(f"Attendance Logged: {student_id}")
+    return {"status": "success", "message": "Attendance saved to SQLite!"}
 
-# Speech-To-Text (NOVA 2 MODEL)
-DEEPGRAM_URL = "wss://api.deepgram.com/v1/listen?model=nova-2&smart_format=true&endpointing=300"
-API_KEY = os.getenv("DEEPGRAM_API_KEY")
 
-@app.websocket("/ws/audio")
-async def audio_websocket_endpoint(websocket: WebSocket):
-    await websocket.accept() # browser connection
-    logger.info("Started the websocket endpoint")
-    
-    extra_headers = {
-        "Authorization": f"Token {API_KEY}"
-    }
+# ============================================================
+# Shared Deepgram WebSocket Session
+# ============================================================
 
-    try: # websocket connection to deepgram since ws is allowed
-        async with websockets.connect(DEEPGRAM_URL, additional_headers=extra_headers) as dg_ws:
-            logger.info("Connected to Deepgram directly!")
+async def _deepgram_session(websocket: WebSocket, brain_fn, label: str):
+    """
+    Reusable STT session: connects browser mic to Deepgram, pipes
+    final transcripts into brain_fn, sends audio/commands back to browser.
+    """
+    await websocket.accept()
+    logger.info(f"[{label}] Connected")
 
-            async def browser_to_deepgram():
+    headers = {"Authorization": f"Token {API_KEY}"}
+
+    try:
+        async with websockets.connect(DEEPGRAM_URL, additional_headers=headers) as dg:
+
+            async def mic_to_deepgram():
                 try:
                     while True:
-                        message = await websocket.receive()
-                        
-                        if message["type"] == "websocket.disconnect":
-                            logger.info("Browser disconnected gracefully.")
+                        msg = await websocket.receive()
+                        if msg["type"] == "websocket.disconnect":
                             break
-                            
-                        if "bytes" in message and message["bytes"]:
-                            await dg_ws.send(message["bytes"])
-                            
+                        if "bytes" in msg and msg["bytes"]:
+                            await dg.send(msg["bytes"])
                 except Exception as e:
-                    logger.error(f"Browser to Deepgram stopped: {e}")
+                    logger.error(f"[{label}] mic->dg: {e}")
 
             async def deepgram_to_brain():
                 try:
                     while True:
-                        msg = await dg_ws.recv()
-                        response = json.loads(msg)
-                        
-                        #(Endpointing/VAD)
-                        if response.get("type") == "Results":
-                            is_final = response.get("is_final", False)
-                            speech_final = response.get("speech_final", False)
-                            
-                            if is_final or speech_final:
-                                alternatives = response.get("channel", {}).get("alternatives", [])
-                                if alternatives:
-                                    sentence = alternatives[0].get("transcript", "")
-                                    if sentence and speech_final:
-                                        logger.info(f"🎤 VAD Detected Silence! Transcript: {sentence}")
-                                        asyncio.create_task(run_brain(sentence, websocket))
+                        raw = await dg.recv()
+                        resp = json.loads(raw)
+                        if resp.get("type") != "Results":
+                            continue
+                        if not resp.get("speech_final"):
+                            continue
+                        alts = resp.get("channel", {}).get("alternatives", [])
+                        if alts:
+                            text = alts[0].get("transcript", "")
+                            if text:
+                                logger.info(f"[{label}] Transcript: {text}")
+                                asyncio.create_task(_run_brain(websocket, brain_fn, text, label))
                 except Exception as e:
-                    logger.error(f"Deepgram to Brain stopped: {e}")
+                    logger.error(f"[{label}] dg->brain: {e}")
 
-            await asyncio.gather( #running at the same time
-                browser_to_deepgram(),
-                deepgram_to_brain()
-            )
+            async def keepalive():
+                try:
+                    while True:
+                        await asyncio.sleep(8)
+                        await dg.send(json.dumps({"type": "KeepAlive"}))
+                except Exception:
+                    pass
+
+            await asyncio.gather(mic_to_deepgram(), deepgram_to_brain(), keepalive())
 
     except WebSocketDisconnect:
-        logger.info("Frontend completely disconnected.")
+        logger.info(f"[{label}] Disconnected")
     except Exception as e:
-        logger.error(f"Error in websocket endpoint: {e}")
+        logger.error(f"[{label}] Error: {e}")
 
-async def run_brain(text: str, websocket: WebSocket):
-    """Takes the VAD text, runs the LLM -> TTS stream, and sends audio back to the browser."""
+
+async def _run_brain(websocket: WebSocket, brain_fn, text: str, label: str):
+    """Run a brain function and send its output (audio bytes or JSON commands) to the client."""
     try:
-        async for chunk in process_voice_pipeline(text):
-            if isinstance(chunk, str):
+        async for chunk in brain_fn(text):
+            if isinstance(chunk, tuple):
+                continue  # internal metadata, not for the client
+            elif isinstance(chunk, str):
                 await websocket.send_text(chunk)
-                logger.info(f"📡 Sent JSON command to frontend: {chunk}")
+                logger.info(f"[{label}] Sent command: {chunk}")
             else:
                 await websocket.send_bytes(chunk)
-                logger.info("🔊 Sent a sentence of TTS audio back to frontend!")
     except Exception as e:
-        logger.error(f"Error in brain: {e}")
+        logger.error(f"[{label}] Brain error: {e}")
+
+
+# ============================================================
+# WebSocket Endpoints
+# ============================================================
+
+@app.websocket("/ws/audio")
+async def audio_websocket_endpoint(websocket: WebSocket):
+    await _deepgram_session(websocket, process_voice_pipeline, "VOICE")
+
+
+@app.websocket("/ws/dashboard-voice")
+async def dashboard_voice_endpoint(websocket: WebSocket):
+    await _deepgram_session(websocket, process_dashboard_voice, "DASHBOARD")
+
 
 if __name__ == "__main__":
-    logger.info("starting up the uvicorn server...")
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
