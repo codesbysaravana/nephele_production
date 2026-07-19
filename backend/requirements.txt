@@ -1,10 +1,11 @@
 fastapi
 uvicorn
 websockets
-dotenv
+python-dotenv
 openai
 psycopg
 psycopg[binary] #for postgres
+psycopg_pool
 numpy
 xgboost
 scikit-learn
