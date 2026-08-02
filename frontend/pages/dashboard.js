@@ -13,9 +13,6 @@ const dashboard = () => {
     }, 100);
 
     function getApiBase() {
-        if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
-            return "http://localhost:8000";
-        }
         return "https://nephele-dsoa.onrender.com";
     }
 
@@ -234,9 +231,7 @@ const dashboard = () => {
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
-                const wsUrl = (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
-                    ? "ws://localhost:8000/ws/dashboard-voice"
-                    : "wss://nephele-dsoa.onrender.com/ws/dashboard-voice";
+                const wsUrl = "wss://nephele-dsoa.onrender.com/ws/dashboard-voice";
 
                 ws = new WebSocket(wsUrl);
 

@@ -13,6 +13,9 @@ from ai_services.dashboard_brain import process_dashboard_voice
 from attendance_db import AttendanceDB
 from ml.router import router as ml_router
 from analytics_router import router as analytics_router
+from interview import router as interview_router
+from interview.readiness_router import router as readiness_router
+from interview.resume_router import router as resume_router
 
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -30,6 +33,9 @@ app.add_middleware(
 
 app.include_router(ml_router)
 app.include_router(analytics_router)
+app.include_router(interview_router)
+app.include_router(readiness_router)
+app.include_router(resume_router)
 
 DEEPGRAM_URL = "wss://api.deepgram.com/v1/listen?model=nova-2&smart_format=true&endpointing=300"
 API_KEY = os.getenv("DEEPGRAM_API_KEY")

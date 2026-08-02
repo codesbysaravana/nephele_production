@@ -9,3 +9,5 @@ psycopg_pool
 numpy
 xgboost
 scikit-learn
+pdfplumber
+python-multipart

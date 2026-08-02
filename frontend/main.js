@@ -10,6 +10,8 @@ const renderSPA = () => {
 
     if (hash === "#/voice") {
         setupVoicePage();
+    } else if (hash === "#/interview") {
+        import('./pages/interview_logic.js').then(m => m.initInterviewPage());
     }
 };
 
@@ -51,8 +53,7 @@ function setupVoicePage() {
 
     function connectionSocket() {
         return new Promise((resolve, reject) => {
-            //ws = new WebSocket("wss://nephele-dsoa.onrender.com/ws/audio");
-            ws = new WebSocket("ws://localhost:8000/ws/audio");
+            ws = new WebSocket("wss://nephele-dsoa.onrender.com/ws/audio");
             ws.onopen = () => {
                 wsStatus.innerHTML = 'Status: Connected to Server';
                 startBtn.disabled = true;

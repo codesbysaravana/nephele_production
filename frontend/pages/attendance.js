@@ -38,9 +38,7 @@ const attendance = () => {
             try {
                 statusEl.innerText = "Saving attendance...";
 
-                const apiUrl = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
-                    ? "http://localhost:8000/api/attendance"
-                    : "https://nephele-dsoa.onrender.com/api/attendance";
+                const apiUrl = "https://nephele-dsoa.onrender.com/api/attendance";
 
                 await fetch(apiUrl, {
                     method: "POST",
