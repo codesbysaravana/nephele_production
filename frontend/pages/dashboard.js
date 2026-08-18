@@ -13,7 +13,7 @@ const dashboard = () => {
     }, 100);
 
     function getApiBase() {
-        return "https://nephele-dsoa.onrender.com";
+        return "https://nephele-production.onrender.com";
     }
 
     async function fetchData(endpoint) {
@@ -231,7 +231,7 @@ const dashboard = () => {
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
-                const wsUrl = "wss://nephele-dsoa.onrender.com/ws/dashboard-voice";
+                const wsUrl = "wss://nephele-production.onrender.com/ws/dashboard-voice";
 
                 ws = new WebSocket(wsUrl);
 

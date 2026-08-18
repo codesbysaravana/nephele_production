@@ -3,8 +3,8 @@
  * Called after interview.js DOM renders.
  */
 
-const API_BASE = "https://nephele-dsoa.onrender.com";
-const WS_BASE = "wss://nephele-dsoa.onrender.com";
+const API_BASE = "https://nephele-production.onrender.com";
+const WS_BASE = "wss://nephele-production.onrender.com";
 
 let ws = null;
 let mediaStream = null;

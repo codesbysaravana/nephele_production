@@ -38,7 +38,7 @@ const attendance = () => {
             try {
                 statusEl.innerText = "Saving attendance...";
 
-                const apiUrl = "https://nephele-dsoa.onrender.com/api/attendance";
+                const apiUrl = "https://nephele-production.onrender.com/api/attendance";
 
                 await fetch(apiUrl, {
                     method: "POST",

@@ -53,7 +53,7 @@ function setupVoicePage() {
 
     function connectionSocket() {
         return new Promise((resolve, reject) => {
-            ws = new WebSocket("wss://nephele-dsoa.onrender.com/ws/audio");
+            ws = new WebSocket("wss://nephele-production.onrender.com/ws/audio");
             ws.onopen = () => {
                 wsStatus.innerHTML = 'Status: Connected to Server';
                 startBtn.disabled = true;
