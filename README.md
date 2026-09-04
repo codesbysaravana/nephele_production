@@ -1,8 +1,14 @@
-# Nephele — AI Voice Companion
+# Nephele — AI College Placement Companion
 
-A sub-second latency voice AI assistant. Speak to Nephele, she listens, thinks, and talks back in real-time.
+Nephele is a sub-second latency **voice AI companion** built to guide students through their college placement journey. Ask her about interview prep, resume tips, company insights, or anything placement-related — she listens, thinks, and talks back in real-time.
 
 Built by **The Cloud PeP Students** — Tech Leads: **Saravana & Joshua**
+
+---
+
+## What is Nephele?
+
+Nephele is a **real-time conversational voice assistant** designed for college placement support. Students speak naturally, and Nephele responds as a knowledgeable, always-available placement companion — with sub-second response latency thanks to streamed speech recognition, streamed LLM responses, and streamed TTS audio.
 
 ---
 
@@ -42,14 +48,14 @@ Built by **The Cloud PeP Students** — Tech Leads: **Saravana & Joshua**
 
 ```mermaid
 sequenceDiagram
-    participant User
+    participant Student
     participant Browser
     participant FastAPI
     participant Deepgram
     participant GPT4o
     participant TTS
 
-    User->>Browser: Speaks into mic
+    Student->>Browser: Speaks into mic
     loop PCM chunks (linear16 @ 16kHz)
         Browser->>FastAPI: WebSocket audio bytes
         FastAPI->>Deepgram: Forward audio
@@ -72,7 +78,7 @@ sequenceDiagram
         FastAPI-->>Browser: {"type": "close"}
     end
 
-    Browser-->>User: Nephele speaks
+    Browser-->>Student: Nephele speaks
 ```
 
 ---
@@ -101,13 +107,13 @@ production/
 
 ## Technology Stack
 
-| Layer      | Technology                        | Role                                      |
-|------------|-----------------------------------|-------------------------------------------|
-| Frontend   | React 18, Vite, TypeScript        | UI, mic capture, PCM audio playback       |
-| Backend    | Python FastAPI (ASGI)             | WebSocket server, pipeline orchestration  |
-| STT        | Deepgram Nova-2 (WebSocket)       | Real-time speech-to-text with VAD         |
-| LLM        | OpenAI GPT-4o-mini (streaming)    | Conversational AI with function calling   |
-| TTS        | Deepgram Aura Asteria (HTTP)      | Sentence-level text-to-speech             |
+| Layer    | Technology                     | Role                                     |
+|----------|--------------------------------|------------------------------------------|
+| Frontend | React 18, Vite, TypeScript     | UI, mic capture, PCM audio playback      |
+| Backend  | Python FastAPI (ASGI)          | WebSocket server, pipeline orchestration |
+| STT      | Deepgram Nova-2 (WebSocket)    | Real-time speech-to-text with VAD        |
+| LLM      | OpenAI GPT-4o-mini (streaming) | Conversational AI with function calling  |
+| TTS      | Deepgram Aura Asteria (HTTP)   | Sentence-level text-to-speech            |
 
 ---
 
@@ -149,3 +155,7 @@ npm run dev
 ```
 
 Open `http://localhost:5173` in your browser.
+
+---
+
+Built with ❤️ by the **Cloud PeP Students** team.
