@@ -3,11 +3,5 @@ uvicorn
 websockets
 python-dotenv
 openai
-psycopg
-psycopg[binary] #for postgres
-psycopg_pool
-numpy
-xgboost
-scikit-learn
-pdfplumber
-python-multipart
+httpx
+deepgram-sdk~=3.0

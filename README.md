@@ -1,4 +1,4 @@
-# Nephele — AI College Placement Companion
+# Nephele: AI College Placement Companion
 
 Nephele is a sub-second latency **voice AI companion** built to guide students through their college placement journey. Ask her about interview prep, resume tips, company insights, or anything placement-related — she listens, thinks, and talks back in real-time.
 
@@ -125,37 +125,3 @@ production/
 - Node.js 18+
 - OpenAI API Key
 - Deepgram API Key
-
-### Backend
-
-```bash
-cd backend
-python -m venv venv
-venv\Scripts\activate        # Windows
-pip install -r requirements.txt
-```
-
-Create `backend/.env`:
-
-```env
-OPENAI_API_KEY=sk-your-key
-DEEPGRAM_API_KEY=your-key
-```
-
-```bash
-uvicorn main:app --reload --port 8000
-```
-
-### Frontend
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-Open `http://localhost:5173` in your browser.
-
----
-
-Built with ❤️ by the **Cloud PeP Students** team.
