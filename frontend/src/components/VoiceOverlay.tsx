@@ -119,7 +119,7 @@ export default function VoiceOverlay() {
             }
 
             const text = interimTranscript.toLowerCase();
-            if (text.includes('hey jade') || text.includes('hey, jade')) {
+            if (text.includes('hey nephele') || text.includes('hey, nephele')) {
                 recognition.stop();
                 setIsOpen(true);
                 setTimeout(() => startRecording(), 100);
@@ -259,7 +259,7 @@ export default function VoiceOverlay() {
     };
 
     return (
-        <div className="fixed bottom-6 right-6 md:bottom-10 md:right-10 z-[9999] flex flex-col items-end gap-5">
+        <div className="fixed bottom-24 right-6 md:bottom-28 md:right-10 z-[9999] flex flex-col items-end gap-5">
 
             {/* Transcript Panel */}
             {isOpen && (
