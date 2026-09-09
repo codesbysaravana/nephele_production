@@ -180,11 +180,10 @@ async def voice_websocket(websocket: WebSocket):
             }
         ]
 
-        # Cancellation event — set when a new utterance arrives to interrupt current response
         current_cancel = asyncio.Event()
         current_task: asyncio.Task | None = None
 
-        async def on_message(self, result, **kwargs):
+        async def on_message(result, **kwargs):
             nonlocal current_cancel, current_task
 
             sentence = result.channel.alternatives[0].transcript
@@ -194,13 +193,11 @@ async def voice_websocket(websocket: WebSocket):
             if result.is_final:
                 conversation_history.append({"role": "user", "content": sentence})
 
-                # Notify frontend of user's speech
                 try:
                     await websocket.send_json({"type": "user_text", "content": sentence})
                 except Exception:
                     return
 
-                # Barge-in: cancel any in-flight LLM+TTS pipeline
                 if current_task and not current_task.done():
                     current_cancel.set()
                     try:
@@ -208,7 +205,6 @@ async def voice_websocket(websocket: WebSocket):
                     except (asyncio.TimeoutError, Exception):
                         current_task.cancel()
 
-                # Trim history: keep system prompt + last 20 messages
                 while len(conversation_history) > 21:
                     conversation_history.pop(1)
 
@@ -223,7 +219,7 @@ async def voice_websocket(websocket: WebSocket):
 
                 current_task = asyncio.create_task(run_pipeline(sentence, current_cancel))
 
-        async def on_error(self, error, **kwargs):
+        async def on_error(error, **kwargs):
             print(f"Deepgram Error: {error}")
 
         dg_connection.on(LiveTranscriptionEvents.Transcript, on_message)
