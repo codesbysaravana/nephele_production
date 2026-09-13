@@ -41,19 +41,88 @@ TTS_HEADERS = {
 
 
 async def stream_tts_to_ws(sentence: str, websocket: WebSocket, cancelled: asyncio.Event):
-    """Stream a single sentence's TTS audio to the client. Stops early if cancelled."""
+    """
+    Stream a single sentence's TTS audio to the client.
+    Stops early if cancelled by racing the stream task against cancel checks.
+    """
+    stream_task = None
+
     try:
-        async with _tts_http_client.stream("POST", TTS_URL, headers=TTS_HEADERS, json={"text": sentence}) as r:
-            if r.status_code == 200:
-                async for chunk in r.aiter_bytes(4096):
-                    if cancelled.is_set():
-                        return
-                    await websocket.send_bytes(chunk)
-            else:
+        async with _tts_http_client.stream(
+            "POST",
+            TTS_URL,
+            headers=TTS_HEADERS,
+            json={"text": sentence}
+        ) as r:
+            if r.status_code != 200:
                 body = await r.aread()
                 print(f"TTS Error: {r.status_code} {body.decode()}")
+                return
+
+            # Define the streaming pump as a separate coroutine
+            async def pump_chunks():
+                """Inner coroutine that does the actual streaming."""
+                try:
+                    async for chunk in r.aiter_bytes(4096):
+                        # Check cancel even during iteration
+                        if cancelled.is_set():
+                            return
+                        # Send with timeout to detect dead clients
+                        try:
+                            await asyncio.wait_for(
+                                websocket.send_bytes(chunk),
+                                timeout=1.0
+                            )
+                        except asyncio.TimeoutError:
+                            print("WebSocket send timeout — client too slow or disconnected")
+                            return
+                except asyncio.CancelledError:
+                    # Task was cancelled externally (expected during barge-in)
+                    return
+
+            # Launch the pump as a task
+            stream_task = asyncio.create_task(pump_chunks())
+
+            # Poll loop: check cancel signal every 100ms while stream runs
+            while not stream_task.done():
+                try:
+                    # Shield prevents our wait_for from cancelling stream_task
+                    await asyncio.wait_for(
+                        asyncio.shield(stream_task),
+                        timeout=0.1  # 100ms polling interval
+                    )
+                    # If we get here, stream_task completed successfully
+                    break
+                except asyncio.TimeoutError:
+                    # 100ms elapsed, check cancel signal
+                    if cancelled.is_set():
+                        # User barged in — forcefully cancel the stream
+                        stream_task.cancel()
+                        try:
+                            await stream_task  # Wait for cancellation to complete
+                        except asyncio.CancelledError:
+                            pass
+                        return
+                    # Not cancelled yet, continue polling
+                    continue
+
+            # Stream completed naturally
+            await stream_task  # Retrieve any exception that occurred
+
+    except asyncio.CancelledError:
+        # Parent task was cancelled (e.g., websocket disconnect)
+        if stream_task and not stream_task.done():
+            stream_task.cancel()
+            try:
+                await stream_task
+            except asyncio.CancelledError:
+                pass
+        raise  # Propagate cancellation up
+
     except Exception as e:
         print(f"TTS Network Error: {e}")
+        if stream_task and not stream_task.done():
+            stream_task.cancel()
 
 
 async def generate_llm_and_tts(
@@ -61,6 +130,7 @@ async def generate_llm_and_tts(
     websocket: WebSocket,
     conversation_history: list,
     cancelled: asyncio.Event,
+    history_lock: asyncio.Lock,
 ):
     """Stream LLM response and pipe sentences to TTS concurrently."""
     if transcript:
@@ -84,9 +154,17 @@ async def generate_llm_and_tts(
         while True:
             sentence = await sentence_queue.get()
             if sentence is None:
+                sentence_queue.task_done()
                 break
             if cancelled.is_set():
                 sentence_queue.task_done()
+                # Drain remaining sentences to prevent queue blocking
+                while not sentence_queue.empty():
+                    try:
+                        sentence_queue.get_nowait()
+                        sentence_queue.task_done()
+                    except asyncio.QueueEmpty:
+                        break
                 break
             await stream_tts_to_ws(sentence, websocket, cancelled)
             sentence_queue.task_done()
@@ -142,22 +220,68 @@ async def generate_llm_and_tts(
     if buffer.strip() and len(buffer.strip()) > 3:
         sentence_queue.put_nowait(buffer.strip())
 
-    if full_ai_response:
-        print(f"AI: {full_ai_response}")
-        conversation_history.append({"role": "assistant", "content": full_ai_response})
-
     # Signal TTS worker to finish
     sentence_queue.put_nowait(None)
     await tts_task
 
+    # ========== CRITICAL SECTION: Update conversation history ==========
+
+    # Case 1: Tool was called
+    if tool_function_name:
+        async with history_lock:
+            conversation_history.append({
+                "role": "assistant",
+                "tool_calls": [{
+                    "id": tool_call_id,
+                    "type": "function",
+                    "function": {
+                        "name": tool_function_name,
+                        "arguments": tool_arguments
+                    }
+                }]
+            })
+
+        # Execute the tool
+        if tool_function_name == "close_connection":
+            print("Tool Call: close_connection")
+
+            # Append tool result to history (for completeness)
+            async with history_lock:
+                conversation_history.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call_id,
+                    "content": "Connection closed successfully"
+                })
+
+            # Notify client and close
+            if not cancelled.is_set():
+                await websocket.send_json({"type": "audio_complete"})
+            await websocket.send_json({"type": "close"})
+            return
+
+        # Future tools would be handled here
+        # elif tool_function_name == "search_companies":
+        #     result = await search_companies(tool_arguments)
+        #     async with history_lock:
+        #         conversation_history.append({
+        #             "role": "tool",
+        #             "tool_call_id": tool_call_id,
+        #             "content": json.dumps(result)
+        #         })
+
+    # Case 2: Normal text response
+    else:
+        if full_ai_response and not cancelled.is_set():
+            print(f"AI: {full_ai_response}")
+            async with history_lock:
+                conversation_history.append({
+                    "role": "assistant",
+                    "content": full_ai_response
+                })
+
+    # Signal audio completion (if not already sent)
     if not cancelled.is_set():
         await websocket.send_json({"type": "audio_complete"})
-
-    # Handle tool calls
-    if tool_function_name == "close_connection":
-        print("Tool Call: close_connection")
-        await websocket.send_json({"type": "close"})
-        return
 
 
 @router.websocket("/ws/voice")
@@ -182,16 +306,18 @@ async def voice_websocket(websocket: WebSocket):
 
         current_cancel = asyncio.Event()
         current_task: asyncio.Task | None = None
+        history_lock = asyncio.Lock()
 
         async def on_message(result, **kwargs):
-            nonlocal current_cancel, current_task
+            nonlocal current_cancel, current_task, history_lock
 
             sentence = result.channel.alternatives[0].transcript
             if not sentence:
                 return
 
             if result.is_final:
-                conversation_history.append({"role": "user", "content": sentence})
+                async with history_lock:
+                    conversation_history.append({"role": "user", "content": sentence})
 
                 try:
                     await websocket.send_json({"type": "user_text", "content": sentence})
@@ -205,15 +331,16 @@ async def voice_websocket(websocket: WebSocket):
                     except (asyncio.TimeoutError, Exception):
                         current_task.cancel()
 
-                while len(conversation_history) > 21:
-                    conversation_history.pop(1)
+                async with history_lock:
+                    while len(conversation_history) > 21:
+                        conversation_history.pop(1)
 
                 # Launch new pipeline
                 current_cancel = asyncio.Event()
 
                 async def run_pipeline(text, cancel_evt):
                     try:
-                        await generate_llm_and_tts(text, websocket, conversation_history, cancel_evt)
+                        await generate_llm_and_tts(text, websocket, conversation_history, cancel_evt, history_lock)
                     except Exception as e:
                         print(f"LLM pipeline error: {e}")
 
