@@ -1,7 +1,8 @@
-fastapi
-uvicorn
-websockets
-python-dotenv
-openai
-httpx
-deepgram-sdk~=3.0
+fastapi==0.143.2
+uvicorn==0.54.0
+websockets==16.1.1
+python-dotenv==1.2.4
+openai==3.31.0
+httpx==0.28.1
+# Keep the v3 live WebSocket API until a separately tested SDK migration.
+deepgram-sdk==3.11.0

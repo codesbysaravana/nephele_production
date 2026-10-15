@@ -1,50 +1,57 @@
-import './App.css'
-import VoiceOverlay from './components/VoiceOverlay'
+import "./App.css";
+import VoiceOverlay from "./components/VoiceOverlay";
 
-function App() {
+export default function App() {
   return (
-    <div style={{ position: 'relative', width: '100%', height: '100dvh', overflow: 'hidden', background: '#000' }}>
-
-      {/* Full-screen Nephele video */}
-      <video
-        autoPlay
-        loop
-        muted
-        playsInline
-        style={{
-          position: 'absolute',
-          inset: 0,
-          width: '100%',
-          height: '100%',
-          objectFit: 'cover',
-          objectPosition: 'center top',
-          zIndex: 0,
-        }}
-      >
-        <source src="/nepheletrimmed.mp4" type="video/mp4" />
-      </video>
-
-      {/* Subtle bottom gradient so the mic button stands out */}
-      <div
-        style={{
-          position: 'absolute',
-          bottom: 0,
-          left: 0,
-          right: 0,
-          height: '220px',
-          background: 'linear-gradient(to top, rgba(0,0,0,0.65) 0%, transparent 100%)',
-          zIndex: 1,
-          pointerEvents: 'none',
-        }}
-      />
-
-      {/* Voice overlay on top of everything */}
-      <div style={{ position: 'relative', zIndex: 10 }}>
+    <div className="app-shell">
+      <header className="site-header">
+        <a className="wordmark" href="/" aria-label="Nephele home">
+          <img src="/nepheleIcon.png" width="32" height="32" alt="" />
+          nephele<span className="wordmark-dot">.</span>
+        </a>
+        <span className="header-caption">YOUR PLACEMENT COMPANION</span>
+      </header>
+      <main className="main-layout">
+        <section className="companion" aria-label="Meet Nephele">
+          <div className="companion-orbit" aria-hidden="true" />
+          <div className="video-frame">
+            <img
+              className="companion-art"
+              src="/nepheleIcon.png"
+              alt="Nephele, a friendly blue robot"
+            />
+            <div className="video-shade" />
+            <div className="companion-caption">
+              <span className="eyebrow">A VOICE IN YOUR CORNER</span>
+              <h2>Meet Nephele.</h2>
+              <p>Practice. Ask. Find your next step.</p>
+            </div>
+          </div>
+          <div className="companion-tags">
+            <span>Interview prep</span>
+            <span>Resume advice</span>
+            <span>Career clarity</span>
+          </div>
+          <details className="original-animation">
+            <summary>View Nephele's original animation</summary>
+            <video
+              controls
+              loop
+              muted
+              playsInline
+              preload="none"
+              aria-label="Original Nephele face animation"
+            >
+              <source src="/nepheletrimmed.mp4" type="video/mp4" />
+            </video>
+          </details>
+        </section>
         <VoiceOverlay />
-      </div>
-
+      </main>
+      <footer className="site-footer">
+        <span>Built by The Cloud PeP Students</span>
+        <span>Tech leads: Saravana &amp; Joshua</span>
+      </footer>
     </div>
-  )
+  );
 }
-
-export default App

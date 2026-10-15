@@ -61,3 +61,6 @@ legacy/
 
 IMPLEMENTATION_ROADMAP.md
 SESSION_SUMMARY.md
+
+# Safe, empty templates are checked in; real environment files remain ignored.
+!.env.example
