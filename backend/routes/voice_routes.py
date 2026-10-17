@@ -1,32 +1,36 @@
 """Streaming voice protocol. Each connection owns and closes its provider clients.
 
-deepgram-sdk v7 migration of voice_routes.py (was deepgram-sdk==3.11.0).
-Changes vs v3 version:
-- AsyncDeepgramClient.listen.v1.connect(...) context manager; typed messages.
-- Every server message is logged on failure paths with the real payload
-  (v3 logged a generic string; v3 also swallowed handler exceptions).
-- Explicit KeepAlive every 8s so Deepgram's ~10s idle timeout does not kill
-  the stream while the user is silent (v3 version had keepalive disabled;
-  sessions died ~12s after the user stopped speaking).
+AssemblyAI Universal-Streaming STT port (was Deepgram nova-2 via deepgram-sdk v7).
+Why: Deepgram's streaming endpoint stopped returning transcripts for traffic
+from Render and Railway IPs (~Oct 16) while identical traffic works elsewhere;
+the vendor-side issue is unresolved, so STT moves to AssemblyAI.
+Changes vs the Deepgram version:
+- STT leg is a plain websockets connection to AssemblyAI's v3 streaming API
+  (Begin / SpeechStarted / Turn / Termination messages). No new dependency:
+  the project already uses websockets.
+- One Turn with end_of_turn=true carries the whole finalized utterance, so the
+  Deepgram is_final/speech_final stitching (pending list) is gone.
+- No KeepAlive task: AssemblyAI has no ~10s idle timeout (sessions can stay
+  open for hours; our own 15-minute session deadline still applies).
+- The frontend WebSocket protocol is unchanged: same /ws/voice messages in
+  both directions, same 16 kHz linear16 audio frames.
+- TTS still uses Deepgram aura-asteria-en (HTTPS POST, unaffected by the
+  streaming issue); LLM still uses OpenAI gpt-4o-mini.
 """
 import asyncio
+import json
 import logging
 import os
 from contextlib import suppress
 
 import httpx
+import websockets
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-from deepgram import AsyncDeepgramClient
-from deepgram.listen.v1.types import (
-    ListenV1Error,
-    ListenV1Metadata,
-    ListenV1Results,
-    ListenV1SpeechStarted,
-)
 from openai import AsyncOpenAI
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+STT_URL = "wss://streaming.assemblyai.com/v3/ws?sample_rate=16000&encoding=pcm_s16le"
 TTS_URL = "https://api.deepgram.com/v1/speak?model=aura-asteria-en&encoding=linear16&sample_rate=24000&container=none"
 SYSTEM_PROMPT = (
     "You are Nephele, a college placement companion. Keep answers brief (1-3 sentences) "
@@ -38,7 +42,6 @@ TOOLS = [{"type": "function", "function": {
     "name": "close_connection", "description": "Hang up when the user says goodbye or asks to end the call.",
     "parameters": {"type": "object", "properties": {}, "required": []},
 }}]
-KEEPALIVE_SECONDS = 8  # Deepgram closes idle streams after ~10s without audio
 
 
 async def cancel_task(task):
@@ -158,8 +161,9 @@ async def voice_websocket(websocket: WebSocket):
         return
     await websocket.accept()
     openai_key = os.getenv("OPENAI_API_KEY")
-    deepgram_key = os.getenv("DEEPGRAM_API_KEY")
-    if not openai_key or not deepgram_key:
+    assemblyai_key = os.getenv("ASSEMBLYAI_API_KEY")
+    deepgram_key = os.getenv("DEEPGRAM_API_KEY")  # TTS only
+    if not openai_key or not assemblyai_key or not deepgram_key:
         await websocket.send_json({"type": "error", "message": "Voice service is not configured. Please contact the site owner."})
         await websocket.close(code=1011)
         return
@@ -169,9 +173,8 @@ async def voice_websocket(websocket: WebSocket):
     turn_lock = asyncio.Lock()
     history_lock = asyncio.Lock()
     history = [{"role": "system", "content": SYSTEM_PROMPT}]
-    pending = []
     listener = None
-    keepalive = None
+    stt_connection = None
 
     async def interrupt():
         nonlocal current_task
@@ -180,14 +183,13 @@ async def voice_websocket(websocket: WebSocket):
         current_task = None
 
     try:
-        deepgram = AsyncDeepgramClient(api_key=deepgram_key)
         async with AsyncOpenAI(api_key=openai_key, timeout=30.0) as llm, \
                    httpx.AsyncClient(timeout=20.0) as http:
-            async with deepgram.listen.v1.connect(
-                model="nova-2", language="en-US", smart_format=True,
-                interim_results=True, vad_events=True, encoding="linear16",
-                sample_rate=16000, channels=1, endpointing=750,
-            ) as dg_connection:
+            async with websockets.connect(
+                STT_URL, additional_headers={"Authorization": assemblyai_key},
+                max_size=2**22,
+            ) as stt_ws:
+                stt_connection = stt_ws
 
                 async def run_pipeline(sentence, cancel):
                     try:
@@ -203,36 +205,36 @@ async def voice_websocket(websocket: WebSocket):
                 async def handle_message(message):
                     nonlocal current_cancel, current_task
                     try:
-                        if isinstance(message, ListenV1Metadata):
-                            logger.info("Deepgram stream opened, request_id=%s", message.request_id)
+                        msg_type = message.get("type")
+                        if msg_type == "Begin":
+                            logger.info("AssemblyAI stream opened, session_id=%s", message.get("id"))
                             return
-                        if isinstance(message, ListenV1Error):
-                            logger.error(
-                                "Deepgram stream error: variant=%s code=%s description=%s",
-                                message.variant, message.code, message.description,
-                            )
+                        if msg_type == "Error":
+                            logger.error("AssemblyAI stream error: %s", message.get("error"))
                             with suppress(Exception):
                                 await websocket.send_json({"type": "error", "message": "Speech recognition disconnected. Please reconnect."})
                                 await websocket.close(code=1011)
                             return
-                        if isinstance(message, ListenV1SpeechStarted):
+                        if msg_type == "SpeechStarted":
                             async with turn_lock:
                                 await interrupt()
                                 await websocket.send_json({"type": "interrupted"})
                             return
-                        if not isinstance(message, ListenV1Results):
-                            logger.warning("Unhandled Deepgram message: %r", message)
+                        if msg_type == "Termination":
+                            logger.info("AssemblyAI stream terminated: %s", message.get("audio_duration_seconds"))
                             return
-                        alternatives = (message.channel.alternatives if message.channel else []) or []
-                        sentence = alternatives[0].transcript.strip() if alternatives else ""
+                        if msg_type != "Turn":
+                            logger.warning("Unhandled AssemblyAI message: %r", message)
+                            return
+                        # Interim turns stream partial text; the end-of-turn Turn
+                        # carries the whole finalized utterance.
+                        if not message.get("end_of_turn"):
+                            return
+                        sentence = (message.get("transcript") or "").strip()
+                        if not sentence:
+                            return
                         async with turn_lock:
-                            if sentence and message.is_final:
-                                pending.append(sentence)
-                            # Deepgram is_final ends a segment; speech_final ends the utterance.
-                            if not message.speech_final or not pending:
-                                return
-                            sentence = " ".join(pending)[:4000]
-                            pending.clear()
+                            sentence = sentence[:4000]
                             await interrupt()
                             async with history_lock:
                                 history.append({"role": "user", "content": sentence})
@@ -242,21 +244,13 @@ async def voice_websocket(websocket: WebSocket):
                             current_task = asyncio.create_task(run_pipeline(sentence, current_cancel))
                     except Exception:
                         # Never let one bad message kill the session silently.
-                        logger.exception("Failed to handle Deepgram message")
+                        logger.exception("Failed to handle AssemblyAI message")
 
                 async def listen():
-                    async for message in dg_connection:
-                        await handle_message(message)
+                    async for raw in stt_ws:
+                        await handle_message(json.loads(raw))
 
                 listener = asyncio.create_task(listen())
-
-                async def send_keepalives():
-                    while True:
-                        await asyncio.sleep(KEEPALIVE_SECONDS)
-                        with suppress(Exception):
-                            await dg_connection.send_keep_alive()
-
-                keepalive = asyncio.create_task(send_keepalives())
                 await websocket.send_json({"type": "ready"})
                 # Bounded session length limits abandoned connections, not provider usage quotas.
                 deadline = asyncio.get_running_loop().time() + 15 * 60
@@ -268,7 +262,7 @@ async def voice_websocket(websocket: WebSocket):
                     if len(data) > 65536:
                         await websocket.close(code=1009)
                         break
-                    await dg_connection.send_media(data)
+                    await stt_ws.send(data)
     except WebSocketDisconnect:
         pass
     except asyncio.TimeoutError:
@@ -281,6 +275,9 @@ async def voice_websocket(websocket: WebSocket):
             await websocket.send_json({"type": "error", "message": "Could not connect to the voice service. Please try again."})
             await websocket.close(code=1011)
     finally:
+        if stt_connection is not None:
+            # Ask AssemblyAI to finalize the session before the socket closes.
+            with suppress(Exception):
+                await stt_connection.send(json.dumps({"type": "Terminate"}))
         await interrupt()
         await cancel_task(listener)
-        await cancel_task(keepalive)
