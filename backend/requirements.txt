@@ -5,4 +5,5 @@ python-dotenv==1.2.4
 openai==3.31.0
 httpx==0.28.1
 # Keep the v3 live WebSocket API until a separately tested SDK migration.
-deepgram-sdk==3.11.0
+deepgram-sdk==7.13.0
+pydantic>=2.7,<3

@@ -1,4 +1,14 @@
-"""Streaming voice protocol. Each connection owns and closes its provider clients."""
+"""Streaming voice protocol. Each connection owns and closes its provider clients.
+
+deepgram-sdk v7 migration of voice_routes.py (was deepgram-sdk==3.11.0).
+Changes vs v3 version:
+- AsyncDeepgramClient.listen.v1.connect(...) context manager; typed messages.
+- Every server message is logged on failure paths with the real payload
+  (v3 logged a generic string; v3 also swallowed handler exceptions).
+- Explicit KeepAlive every 8s so Deepgram's ~10s idle timeout does not kill
+  the stream while the user is silent (v3 version had keepalive disabled;
+  sessions died ~12s after the user stopped speaking).
+"""
 import asyncio
 import logging
 import os
@@ -6,7 +16,13 @@ from contextlib import suppress
 
 import httpx
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-from deepgram import DeepgramClient, LiveOptions, LiveTranscriptionEvents
+from deepgram import AsyncDeepgramClient
+from deepgram.listen.v1.types import (
+    ListenV1Error,
+    ListenV1Metadata,
+    ListenV1Results,
+    ListenV1SpeechStarted,
+)
 from openai import AsyncOpenAI
 
 router = APIRouter()
@@ -22,6 +38,7 @@ TOOLS = [{"type": "function", "function": {
     "name": "close_connection", "description": "Hang up when the user says goodbye or asks to end the call.",
     "parameters": {"type": "object", "properties": {}, "required": []},
 }}]
+KEEPALIVE_SECONDS = 8  # Deepgram closes idle streams after ~10s without audio
 
 
 async def cancel_task(task):
@@ -153,7 +170,8 @@ async def voice_websocket(websocket: WebSocket):
     history_lock = asyncio.Lock()
     history = [{"role": "system", "content": SYSTEM_PROMPT}]
     pending = []
-    dg_connection = None
+    listener = None
+    keepalive = None
 
     async def interrupt():
         nonlocal current_task
@@ -162,9 +180,14 @@ async def voice_websocket(websocket: WebSocket):
         current_task = None
 
     try:
-        async with AsyncOpenAI(api_key=openai_key, timeout=30.0) as llm, httpx.AsyncClient(timeout=20.0) as http:
-            try:
-                dg_connection = DeepgramClient(deepgram_key).listen.asyncwebsocket.v("1")
+        deepgram = AsyncDeepgramClient(api_key=deepgram_key)
+        async with AsyncOpenAI(api_key=openai_key, timeout=30.0) as llm, \
+                   httpx.AsyncClient(timeout=20.0) as http:
+            async with deepgram.listen.v1.connect(
+                model="nova-2", language="en-US", smart_format=True,
+                interim_results=True, vad_events=True, encoding="linear16",
+                sample_rate=16000, channels=1, endpointing=750,
+            ) as dg_connection:
 
                 async def run_pipeline(sentence, cancel):
                     try:
@@ -177,47 +200,63 @@ async def voice_websocket(websocket: WebSocket):
                             await websocket.send_json({"type": "error", "message": "The voice service had a problem. Please try again."})
                             await websocket.close(code=1011)
 
-                async def on_speech_started(*args, **kwargs):
-                    async with turn_lock:
-                        await interrupt()
-                        await websocket.send_json({"type": "interrupted"})
-
-                async def on_message(*args, result, **kwargs):
+                async def handle_message(message):
                     nonlocal current_cancel, current_task
-                    alternatives = result.channel.alternatives
-                    sentence = alternatives[0].transcript.strip() if alternatives else ""
-                    async with turn_lock:
-                        if sentence and result.is_final:
-                            pending.append(sentence)
-                        # Deepgram is_final ends a segment; speech_final ends the utterance.
-                        if not result.speech_final or not pending:
+                    try:
+                        if isinstance(message, ListenV1Metadata):
+                            logger.info("Deepgram stream opened, request_id=%s", message.request_id)
                             return
-                        sentence = " ".join(pending)[:4000]
-                        pending.clear()
-                        await interrupt()
-                        async with history_lock:
-                            history.append({"role": "user", "content": sentence})
-                            trim_history(history)
-                        await websocket.send_json({"type": "user_text", "content": sentence})
-                        current_cancel = asyncio.Event()
-                        current_task = asyncio.create_task(run_pipeline(sentence, current_cancel))
+                        if isinstance(message, ListenV1Error):
+                            logger.error(
+                                "Deepgram stream error: variant=%s code=%s description=%s",
+                                message.variant, message.code, message.description,
+                            )
+                            with suppress(Exception):
+                                await websocket.send_json({"type": "error", "message": "Speech recognition disconnected. Please reconnect."})
+                                await websocket.close(code=1011)
+                            return
+                        if isinstance(message, ListenV1SpeechStarted):
+                            async with turn_lock:
+                                await interrupt()
+                                await websocket.send_json({"type": "interrupted"})
+                            return
+                        if not isinstance(message, ListenV1Results):
+                            logger.warning("Unhandled Deepgram message: %r", message)
+                            return
+                        alternatives = (message.channel.alternatives if message.channel else []) or []
+                        sentence = alternatives[0].transcript.strip() if alternatives else ""
+                        async with turn_lock:
+                            if sentence and message.is_final:
+                                pending.append(sentence)
+                            # Deepgram is_final ends a segment; speech_final ends the utterance.
+                            if not message.speech_final or not pending:
+                                return
+                            sentence = " ".join(pending)[:4000]
+                            pending.clear()
+                            await interrupt()
+                            async with history_lock:
+                                history.append({"role": "user", "content": sentence})
+                                trim_history(history)
+                            await websocket.send_json({"type": "user_text", "content": sentence})
+                            current_cancel = asyncio.Event()
+                            current_task = asyncio.create_task(run_pipeline(sentence, current_cancel))
+                    except Exception:
+                        # Never let one bad message kill the session silently.
+                        logger.exception("Failed to handle Deepgram message")
 
-                async def on_error(*args, **kwargs):
-                    logger.warning("Speech recognition stream failed")
-                    with suppress(Exception):
-                        await websocket.send_json({"type": "error", "message": "Speech recognition disconnected. Please reconnect."})
-                        await websocket.close(code=1011)
+                async def listen():
+                    async for message in dg_connection:
+                        await handle_message(message)
 
-                dg_connection.on(LiveTranscriptionEvents.Transcript, on_message)
-                dg_connection.on(LiveTranscriptionEvents.SpeechStarted, on_speech_started)
-                dg_connection.on(LiveTranscriptionEvents.Error, on_error)
-                started = await dg_connection.start(LiveOptions(
-                    model="nova-2", language="en-US", smart_format=True,
-                    interim_results=True, vad_events=True, encoding="linear16",
-                    sample_rate=16000, channels=1, endpointing=750,
-                ))
-                if not started:
-                    raise RuntimeError("Speech recognition did not start")
+                listener = asyncio.create_task(listen())
+
+                async def send_keepalives():
+                    while True:
+                        await asyncio.sleep(KEEPALIVE_SECONDS)
+                        with suppress(Exception):
+                            await dg_connection.send_keep_alive()
+
+                keepalive = asyncio.create_task(send_keepalives())
                 await websocket.send_json({"type": "ready"})
                 # Bounded session length limits abandoned connections, not provider usage quotas.
                 deadline = asyncio.get_running_loop().time() + 15 * 60
@@ -229,13 +268,7 @@ async def voice_websocket(websocket: WebSocket):
                     if len(data) > 65536:
                         await websocket.close(code=1009)
                         break
-                    await dg_connection.send(data)
-            finally:
-                await interrupt()
-                if dg_connection is not None:
-                    with suppress(Exception):
-                        await asyncio.wait_for(dg_connection.finish(), timeout=5)
-                    dg_connection = None
+                    await dg_connection.send_media(data)
     except WebSocketDisconnect:
         pass
     except asyncio.TimeoutError:
@@ -249,6 +282,5 @@ async def voice_websocket(websocket: WebSocket):
             await websocket.close(code=1011)
     finally:
         await interrupt()
-        if dg_connection is not None:
-            with suppress(Exception):
-                await asyncio.wait_for(dg_connection.finish(), timeout=5)
+        await cancel_task(listener)
+        await cancel_task(keepalive)
